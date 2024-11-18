@@ -776,7 +776,7 @@ class AMTAlarm:
                     and time.monotonic() - self._read_timestamp >= self._timeout
                 ):
                     self.polling_task = None
-                    self.logger.error(f"Timeout error {(time.monotonic() - self._read_timestamp))}")
+                    self.logger.error(f"Timeout error {(time.monotonic() - self._read_timestamp)}")
                     await self.__accept_new_connection()
                     return
 
