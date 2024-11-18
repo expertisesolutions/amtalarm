@@ -3,6 +3,9 @@ import socket
 import time
 from typing import Union
 import sys
+import logging
+
+LOGGER = logging.getLogger(__package__)
 
 AMT_COMMAND_CODE_CONECTAR = 0x94
 # Data:
@@ -734,6 +737,7 @@ class AMTAlarm:
         if self.default_password is None:
             return
 
+        print("there is a default_password")
         while True:
             try:
                 await self.send_request_zones()
