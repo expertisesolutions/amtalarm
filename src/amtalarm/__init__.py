@@ -404,7 +404,7 @@ class AMTAlarm:
         buf = buf + bytes([0x40 + partition + 1])
         buf = buf + b"\x21"
 
-        await self.send_message(buf)
+        await self.send_message(buf, crc=self.disarm_crc)
 
     async def __send_ack(self):
         try:
@@ -436,11 +436,14 @@ class AMTAlarm:
             await self.__accept_new_connection()
             raise
 
-    async def send_message(self, packet: bytes):
+    async def send_message(self, packet: bytes, crcengine=None):
         """Send packet."""
 
+        if crcengine is None:
+            crcengine = self.crc
+
         buf = bytes([len(packet)]) + packet
-        crc = self.crc(buf + bytes([0]))
+        crc = crcengine(buf + bytes([0]))
         await self.send_raw_message(buf + bytes([crc]))
 
     def __handle_amt_event(self, event: int, partition: int, zone: int, client_id):
@@ -872,38 +875,6 @@ class AMTAlarm:
             break
 
         return True
-
-    async def async_alarm_disarm(self, code=None):
-        """Send disarm command."""
-
-    async def async_alarm_arm_night(self, code=None):
-        """Send disarm command."""
-        for i in range(self.max_partitions):
-            if CONF_NIGHT_PARTITION_LIST[i] in self.config_entry.data:
-                if self.config_entry.data[CONF_NIGHT_PARTITION_LIST[i]]:
-                    await self.send_arm_partition(i)
-            else:
-                await self.send_arm_partition(i)
-
-    async def async_alarm_arm_away(self, code=None):
-        """Send disarm command."""
-        if self.config_entry.data[CONF_AWAY_MODE_ENABLED]:
-            for i in range(self.max_partitions):
-                if CONF_AWAY_PARTITION_LIST[i] in self.config_entry.data:
-                    if self.config_entry.data[CONF_AWAY_PARTITION_LIST[i]]:
-                        self.send_arm_partition(i)
-                else:
-                    self.send_arm_partition(i)
-
-    async def async_alarm_arm_home(self, code=None):
-        """Send disarm command."""
-        if self.config_entry.data[CONF_HOME_MODE_ENABLED]:
-            for i in range(self.max_partitions):
-                if CONF_HOME_PARTITION_LIST[i] in self.config_entry.data:
-                    if self.config_entry.data[CONF_HOME_PARTITION_LIST[i]]:
-                        await self.send_arm_partition(i)
-                else:
-                    await self.send_arm_partition(i)
 
     def close(self):
         """Close and free resources."""
