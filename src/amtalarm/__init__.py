@@ -5,9 +5,6 @@ from typing import Union
 import sys
 import logging
 
-print ("package", __package__)
-LOGGER = logging.getLogger(__package__)
-
 AMT_COMMAND_CODE_CONECTAR = 0x94
 # Data:
 # Byte 1- channel (0x45 - ethernet, 0x47 - sim card 1, 0x48 - sim card 2)
@@ -211,10 +208,11 @@ class AMTAlarm:
     """Class that represents the alarm panel"""
 
     def __init__(
-        self, port : int, default_password=None
+            self, port : int, default_password=None, logger=logging.getLogger(__package__)
     ) -> None:
         """Initialize."""
 
+        self.logger = logger
         self.default_password = None
         if default_password is not None:
             self.default_password = str(default_password)
@@ -299,11 +297,11 @@ class AMTAlarm:
             await self.writer.drain()
         except OSError as e:
             self.polling_task = None
-            LOGGER.error("Connection error %s", e)
+            logger.error("Connection error %s", e)
             await self.__accept_new_connection()
         except Exception as e:
             self.polling_task = None
-            LOGGER.error("Some unknown error %s", e)
+            logger.error("Some unknown error %s", e)
             await self.__accept_new_connection()
             raise
 
@@ -335,11 +333,11 @@ class AMTAlarm:
             await self.writer.drain()
         except OSError as e:
             self.polling_task = None
-            LOGGER.error("Connection error %s", e)
+            logger.error("Connection error %s", e)
             await self.__accept_new_connection()
         except Exception as e:
             self.polling_task = None
-            LOGGER.error("Some unknown error %s", e)
+            logger.error("Some unknown error %s", e)
             await self.__accept_new_connection()
             raise
 
@@ -377,11 +375,11 @@ class AMTAlarm:
             await self.writer.drain()
         except OSError as e:
             self.polling_task = None
-            LOGGER.error("Connection error %s", e)
+            logger.error("Connection error %s", e)
             await self.__accept_new_connection()
         except Exception as e:
             self.polling_task = None
-            LOGGER.error("Some unknown error %s", e)
+            logger.error("Some unknown error %s", e)
             await self.__accept_new_connection()
             raise
 
@@ -393,11 +391,11 @@ class AMTAlarm:
             await self.writer.drain()
         except OSError as e:
             self.polling_task = None
-            LOGGER.error("Connection error %s", e)
+            logger.error("Connection error %s", e)
             await self.__accept_new_connection()
         except Exception as e:
             self.polling_task = None
-            LOGGER.error("Some unknown error %s", e)
+            logger.error("Some unknown error %s", e)
             await self.__accept_new_connection()
             raise
 
@@ -452,7 +450,7 @@ class AMTAlarm:
                 self.partitions[partition] = True
             # print("state after", self.partitions)
         if event == AMT_EVENT_CODE_FALHA_AO_COMUNICAR_EVENTO:
-            #LOGGER.error("Alarm panel error: %s", AMT_EVENT_MESSAGES[event])
+            #logger.error("Alarm panel error: %s", AMT_EVENT_MESSAGES[event])
             print("Alarm panel error AMT_EVENT_CODE_FALHA_AO_COMUNICAR_EVENTO")
         if event in (
             AMT_EVENT_CODE_EMERGENCIA_MEDICA,
@@ -473,7 +471,7 @@ class AMTAlarm:
             AMT_EVENT_CODE_TAMPER_DO_SENSOR,
         ):
             # print("Triggering partition ", partition, file=sys.stderr)
-            # LOGGER.error(
+            # logger.error(
             #     "Triggering partition %d with error: %s",
             #     partition,
             #     AMT_EVENT_MESSAGES[event],
@@ -514,7 +512,7 @@ class AMTAlarm:
         self.__call_listeners()
 
     async def __handle_packet(self, packet: bytes):
-        LOGGER.debug ('received packet packet', packet.hex(), file=sys.stderr)
+        logger.debug ('received packet packet', packet.hex(), file=sys.stderr)
         if len(packet) > 0:
             cmd = packet[0]
             if cmd == AMT_REQ_CODE_MODELO and len(packet) > 1:
@@ -640,7 +638,7 @@ class AMTAlarm:
                     and len(packet) == 2
             ):
                 print("cmd 0xe9 error: ", packet.hex(), file=sys.stderr)
-                #LOGGER.error("We are using wrong password in AMT integration?")
+                #logger.error("We are using wrong password in AMT integration?")
                 await self.__send_ack()
                 # elif cmd == 0xE9 and len(packet) >= 3 * 8:
             elif cmd == AMT_PROTOCOL_ISEC_MOBILE and len(packet) >= 3 * 8:
