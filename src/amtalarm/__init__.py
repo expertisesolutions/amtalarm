@@ -297,11 +297,11 @@ class AMTAlarm:
             await self.writer.drain()
         except OSError as e:
             self.polling_task = None
-            logger.error("Connection error %s", e)
+            self.logger.error("Connection error %s", e)
             await self.__accept_new_connection()
         except Exception as e:
             self.polling_task = None
-            logger.error("Some unknown error %s", e)
+            self.logger.error("Some unknown error %s", e)
             await self.__accept_new_connection()
             raise
 
@@ -333,11 +333,11 @@ class AMTAlarm:
             await self.writer.drain()
         except OSError as e:
             self.polling_task = None
-            logger.error("Connection error %s", e)
+            self.logger.error("Connection error %s", e)
             await self.__accept_new_connection()
         except Exception as e:
             self.polling_task = None
-            logger.error("Some unknown error %s", e)
+            self.logger.error("Some unknown error %s", e)
             await self.__accept_new_connection()
             raise
 
@@ -375,11 +375,11 @@ class AMTAlarm:
             await self.writer.drain()
         except OSError as e:
             self.polling_task = None
-            logger.error("Connection error %s", e)
+            self.logger.error("Connection error %s", e)
             await self.__accept_new_connection()
         except Exception as e:
             self.polling_task = None
-            logger.error("Some unknown error %s", e)
+            self.logger.error("Some unknown error %s", e)
             await self.__accept_new_connection()
             raise
 
@@ -391,11 +391,11 @@ class AMTAlarm:
             await self.writer.drain()
         except OSError as e:
             self.polling_task = None
-            logger.error("Connection error %s", e)
+            self.logger.error("Connection error %s", e)
             await self.__accept_new_connection()
         except Exception as e:
             self.polling_task = None
-            logger.error("Some unknown error %s", e)
+            self.logger.error("Some unknown error %s", e)
             await self.__accept_new_connection()
             raise
 
@@ -450,7 +450,7 @@ class AMTAlarm:
                 self.partitions[partition] = True
             # print("state after", self.partitions)
         if event == AMT_EVENT_CODE_FALHA_AO_COMUNICAR_EVENTO:
-            #logger.error("Alarm panel error: %s", AMT_EVENT_MESSAGES[event])
+            #self.logger.error("Alarm panel error: %s", AMT_EVENT_MESSAGES[event])
             print("Alarm panel error AMT_EVENT_CODE_FALHA_AO_COMUNICAR_EVENTO")
         if event in (
             AMT_EVENT_CODE_EMERGENCIA_MEDICA,
@@ -471,7 +471,7 @@ class AMTAlarm:
             AMT_EVENT_CODE_TAMPER_DO_SENSOR,
         ):
             # print("Triggering partition ", partition, file=sys.stderr)
-            # logger.error(
+            # self.logger.error(
             #     "Triggering partition %d with error: %s",
             #     partition,
             #     AMT_EVENT_MESSAGES[event],
@@ -512,7 +512,7 @@ class AMTAlarm:
         self.__call_listeners()
 
     async def __handle_packet(self, packet: bytes):
-        logger.debug ('received packet packet', packet.hex(), file=sys.stderr)
+        self.logger.debug ('received packet packet', packet.hex(), file=sys.stderr)
         if len(packet) > 0:
             cmd = packet[0]
             if cmd == AMT_REQ_CODE_MODELO and len(packet) > 1:
@@ -638,7 +638,7 @@ class AMTAlarm:
                     and len(packet) == 2
             ):
                 print("cmd 0xe9 error: ", packet.hex(), file=sys.stderr)
-                #logger.error("We are using wrong password in AMT integration?")
+                #self.logger.error("We are using wrong password in AMT integration?")
                 await self.__send_ack()
                 # elif cmd == 0xE9 and len(packet) >= 3 * 8:
             elif cmd == AMT_PROTOCOL_ISEC_MOBILE and len(packet) >= 3 * 8:
