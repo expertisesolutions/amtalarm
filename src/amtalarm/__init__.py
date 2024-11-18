@@ -404,7 +404,7 @@ class AMTAlarm:
         buf = buf + bytes([0x40 + partition + 1])
         buf = buf + b"\x21"
 
-        await self.send_message(buf, crc=self.disarm_crc)
+        await self.send_message(buf, crcengine=self.disarm_crc)
 
     async def __send_ack(self):
         try:
