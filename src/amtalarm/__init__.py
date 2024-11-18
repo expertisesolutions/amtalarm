@@ -513,7 +513,7 @@ class AMTAlarm:
         self.__call_listeners()
 
     async def __handle_packet(self, packet: bytes):
-        print ('received packet packet', packet.hex(), file=sys.stderr)
+        LOGGER.debug ('received packet packet', packet.hex(), file=sys.stderr)
         if len(packet) > 0:
             cmd = packet[0]
             if cmd == AMT_REQ_CODE_MODELO and len(packet) > 1:
