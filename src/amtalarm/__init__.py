@@ -269,103 +269,43 @@ class AMTAlarm:
 
         await self.send_message(buf)
 
-    async def send_arm_partition(self, partition: int):
+    async def send_arm_partition(self, partition: int, code=self.default_password):
         """Send Request Information packet."""
 
         self.logger.info(f"arm partition {partition+1}")
 
-        if self.default_password is None:
+        if code is None:
             raise ValueError
 
         buf = bytes([])
-        buf = buf + b"\x0b\xe9\x21"
+        buf = buf + b"\xe9\x21"
 
-        buf = buf + self.default_password.encode("utf-8")
-
-        if len(self.default_password) == 4:
-            buf = buf + b"00"
+        buf = buf + self.code.encode("utf-8")
 
         buf = buf + b"\x41"
         buf = buf + bytes([0x40 + partition + 1])
-        buf = buf + b"\x21\x00"
-        crc = self.crc(buf)
-        buf = buf[0 : len(buf) - 1] + bytes([crc])
+        buf = buf + b"\x21"
 
-        try:
-            self.writer.write(buf)
-            await self.writer.drain()
-        except OSError as e:
-            self.polling_task = None
-            self.logger.error(f"Connection error {str(e)}")
-            await self.__accept_new_connection()
-        except Exception as e:
-            self.polling_task = None
-            self.logger.error(f"Some unknown error {str(e)}")
-            await self.__accept_new_connection()
-            raise
+        await self.send_message(buf)
 
-    async def send_disarm_partition(self, partition: int):
+    async def send_disarm_partition(self, partition: int, code=self.default_password):
         """Send Request Information packet."""
 
         self.logger.info(f"disarm partition {partition+1}")
 
-        if self.default_password is None:
+        if code is None:
             raise ValueError
 
         buf = bytes([])
-        buf = buf + b"\x0b\xe9\x21"
+        buf = buf + b"\xe9\x21"
 
-        buf = buf + self.default_password.encode("utf-8")
-
-        if len(self.default_password) == 4:
-            buf = buf + b"00"
+        buf = buf + self.code.encode("utf-8")
 
         buf = buf + b"\x44"
         buf = buf + bytes([0x40 + partition + 1])
-        buf = buf + b"\x21\x00"
-        crc = self.disarm_crc(buf)
-        buf = buf[0 : len(buf) - 1] + bytes([crc])
+        buf = buf + b"\x21"
 
-        try:
-            self.writer.write(buf)
-            await self.writer.drain()
-        except OSError as e:
-            self.polling_task = None
-            self.logger.error(f"Connection error {str(e)}")
-            await self.__accept_new_connection()
-        except Exception as e:
-            self.polling_task = None
-            self.logger.error(f"Some unknown error {str(e)}")
-            await self.__accept_new_connection()
-            raise
-
-    async def send_test(self):
-        """Send Reverse Engineering Test."""
-
-        # unsigned char buffer[] = {0x0b, 0xe9, 0x21, /* senha */ 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, /* fim da senha */ 0x41, 0x40 + partition, 0x21, 0x00};
-        # self.t1 = 0x44
-
-        # while True: #if True: if self.default_password is None: raise
-        # ValueError
-
-        #     print("send test") buf = bytes([]) #buf = buf +
-        #     b"\x0b\xe9" + bytes([0x21]) buf = buf + b"\x0a\xe9" +
-        #     bytes([0x21])
-
-        #     buf = buf + self.default_password.encode("utf-8") if
-        #     len(self.default_password) == 4: buf = buf + b"00"
-
-        #     buf = buf + bytes([self.t1]) #buf = buf + bytes([0x40 + 3+
-        #     1]) buf = buf + bytes([0x21]) + b"\x00" self.t1 += 1
-
-        #     crc = self.crc(buf) buf = buf[0 : len(buf) - 1] +
-        #     bytes([crc]) print("buf length ", len(buf), file=sys.stderr) print("req buf
-        #     ", buf)
-
-        #     self.writer.write(buf) await self.writer.drain() await
-        #     asyncio.sleep(1)
-
-        #     print("wrote", file=sys.stderr)
+        await self.send_message(buf)
 
     async def __send_ack(self):
         try:
