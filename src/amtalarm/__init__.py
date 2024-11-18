@@ -377,7 +377,7 @@ class AMTAlarm:
         buf = bytes([])
         buf = buf + b"\xe9\x21"
 
-        buf = buf + self.code.encode("utf-8")
+        buf = buf + code.encode("utf-8")
 
         buf = buf + b"\x41"
         buf = buf + bytes([0x40 + partition + 1])
@@ -398,7 +398,7 @@ class AMTAlarm:
         buf = bytes([])
         buf = buf + b"\xe9\x21"
 
-        buf = buf + self.code.encode("utf-8")
+        buf = buf + code.encode("utf-8")
 
         buf = buf + b"\x44"
         buf = buf + bytes([0x40 + partition + 1])
