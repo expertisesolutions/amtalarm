@@ -729,6 +729,8 @@ class AMTAlarm:
     async def __handle_polling(self):
         """Handle read data from alarm."""
 
+        print("handle_polling")
+
         if self.default_password is None:
             return
 
@@ -882,10 +884,14 @@ class AMTAlarm:
 
     async def async_update(self):
         """Asynchronously update hub state."""
+        print("async_update")
+
         if self.polling_task is None:
             self.polling_task = asyncio.create_task(self.__handle_polling())
         if self.reading_task is None:
             self.reading_task = asyncio.create_task(self.__handle_read_from_stream())
+
+        print("tasks created")
 
         await self.initialized_event.wait()
         await self.model_initialized_event.wait()
@@ -908,7 +914,7 @@ class AMTAlarm:
         if self.client_socket is not None:
             self.client_socket.close()
 
-        # self.hass.async_create_task(self.wait_connection_and_update())
+        asyncio.create_task(self.wait_connection_and_update())
 
     def get_partitions(self):
         """Return partitions array."""
@@ -936,7 +942,7 @@ class AMTAlarm:
         """Call all listeners."""
         print ("__call_listeners: ", len(self._listeners), file=sys.stderr)
         for i in self._listeners:
-            i.update()
+            i.alarm_update()
 
     @property
     def max_sensors(self):
