@@ -272,7 +272,7 @@ class AMTAlarm:
     async def send_arm_partition(self, partition: int):
         """Send Request Information packet."""
 
-        # print("arm partition", partition+1, file=sys.stderr)
+        # print("arm partition", partition+1)
 
         if self.default_password is None:
             raise ValueError
@@ -290,7 +290,7 @@ class AMTAlarm:
         buf = buf + b"\x21\x00"
         crc = self.crc(buf)
         buf = buf[0 : len(buf) - 1] + bytes([crc])
-        # print("arm partition req buf ", buf, file=sys.stderr)
+        # print("arm partition req buf ", buf)
 
         try:
             self.writer.write(buf)
@@ -308,7 +308,7 @@ class AMTAlarm:
     async def send_disarm_partition(self, partition: int):
         """Send Request Information packet."""
 
-        # print("arm partition", partition+1, file=sys.stderr)
+        # print("arm partition", partition+1)
 
         if self.default_password is None:
             raise ValueError
@@ -326,7 +326,7 @@ class AMTAlarm:
         buf = buf + b"\x21\x00"
         crc = self.disarm_crc(buf)
         buf = buf[0 : len(buf) - 1] + bytes([crc])
-        # print("disarm partition req buf ", buf, file=sys.stderr)
+        # print("disarm partition req buf ", buf)
 
         try:
             self.writer.write(buf)
@@ -350,7 +350,7 @@ class AMTAlarm:
         # while True: #if True: if self.default_password is None: raise
         # ValueError
 
-        #     print("send test") buf = bytes([], file=sys.stderr) #buf = buf +
+        #     print("send test") buf = bytes([]) #buf = buf +
         #     b"\x0b\xe9" + bytes([0x21]) buf = buf + b"\x0a\xe9" +
         #     bytes([0x21])
 
@@ -512,21 +512,21 @@ class AMTAlarm:
         self.__call_listeners()
 
     async def __handle_packet(self, packet: bytes):
-        self.logger.debug ('received packet packet', packet.hex(), file=sys.stderr)
+        self.logger.debug ('received packet packet', packet.hex())
         if len(packet) > 0:
             cmd = packet[0]
             if cmd == AMT_REQ_CODE_MODELO and len(packet) > 1:
                 # no ack because it is a response
-                print("cmd 0xc2: ", packet.hex(), file=sys.stderr)
+                print("cmd 0xc2: ", packet.hex())
                 self.model = (packet[1:]).decode("utf-8")
                 self.model_initialized_event.set()
                 print("Model is ", self.model)
             elif cmd == AMT_COMMAND_CODE_HEARTBEAT and len(packet) == 1:
-                print("cmd 0xf7: ", packet.hex(), file=sys.stderr)
+                print("cmd 0xf7: ", packet.hex())
                 await self.__send_ack()
             # elif cmd == 0x94:
             elif cmd == AMT_COMMAND_CODE_CONECTAR:
-                print("cmd 0x94: ", packet.hex(), file=sys.stderr)
+                print("cmd 0x94: ", packet.hex())
                 if len(self._mac_address) == 0:
                     self._mac_address = packet[4:7]
 
@@ -535,7 +535,7 @@ class AMTAlarm:
                 await self.send_request_model()
             # elif cmd == 0xC4:
             elif cmd == AMT_REQ_CODE_MAC and len(packet) == 7:
-                print("cmd 0xc4: ", packet.hex(), file=sys.stderr)
+                print("cmd 0xc4: ", packet.hex())
                 self._mac_address = packet[1:7]
             # elif cmd == 0xB0 and len(packet) == 17 and packet[1] == 0x12:
             elif (
@@ -543,7 +543,7 @@ class AMTAlarm:
                     and len(packet) == 17
                     and packet[1] == 0x12 or packet[0] == 0x11
             ):
-                print("cmd 0xb0: ", packet.hex(), file=sys.stderr)
+                print("cmd 0xb0: ", packet.hex())
                 # def unescape_zero(i):
                 #     return i if i != 0xA else 0
 
@@ -577,7 +577,6 @@ class AMTAlarm:
                     partition,
                     "and zone",
                     zone,
-                    file=sys.stderr,
                 )
                 self.__handle_amt_event(ev_id, partition, zone, client_id)
 
@@ -637,12 +636,12 @@ class AMTAlarm:
                     cmd == AMT_PROTOCOL_ISEC_MOBILE
                     and len(packet) == 2
             ):
-                print("cmd 0xe9 error: ", packet.hex(), file=sys.stderr)
+                print("cmd 0xe9 error: ", packet.hex())
                 #self.logger.error("We are using wrong password in AMT integration?")
                 await self.__send_ack()
                 # elif cmd == 0xE9 and len(packet) >= 3 * 8:
             elif cmd == AMT_PROTOCOL_ISEC_MOBILE and len(packet) >= 3 * 8:
-                print("e9 update all partitions and zones", file=sys.stderr)
+                print("e9 update all partitions and zones")
                 for x in range(6):
                     for i in range(8):
                         c = packet[x + 1]
@@ -943,7 +942,7 @@ class AMTAlarm:
 
     def __call_listeners(self):
         """Call all listeners."""
-        print ("__call_listeners: ", len(self._listeners), file=sys.stderr)
+        print ("__call_listeners: ", len(self._listeners))
         for i in self._listeners:
             i.alarm_update()
 
