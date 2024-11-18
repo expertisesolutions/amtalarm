@@ -245,7 +245,6 @@ class AMTAlarm:
         self._mac_address = bytes([])
         self.outstanding_buffer = bytes([])
         self._read_timestamp = 0.0
-        self.read_task = None
 
     async def send_request_model(self):
         await self.send_message(bytes([0xc2]))
@@ -774,7 +773,6 @@ class AMTAlarm:
             try:
                 await self.__handle_data()
             except Exception as ex:
-                self.read_task = None
                 print("Some unknown error %s", ex)
                 await self.__accept_new_connection()
                 raise
@@ -838,8 +836,6 @@ class AMTAlarm:
             self.__call_listeners()
             break
 
-        await self.initialized_event.wait()
-        await self.model_initialized_event.wait()
         return True
 
     async def async_alarm_disarm(self, code=None):
@@ -890,9 +886,14 @@ class AMTAlarm:
         if self.reading_task is None:
             self.reading_task = asyncio.create_task(self.__handle_read_from_stream())
 
+        await self.initialized_event.wait()
+        await self.model_initialized_event.wait()
+
     async def wait_connection_and_update(self):
         """Call asynchronously wait_connection and then after a update."""
+        print("waiting connection")
         await self.wait_connection()
+        print("connected, i think")
         await self.async_update()
 
     async def __accept_new_connection(self):
