@@ -5,6 +5,7 @@ from typing import Union
 import sys
 import logging
 
+print ("package", __package__)
 LOGGER = logging.getLogger(__package__)
 
 AMT_COMMAND_CODE_CONECTAR = 0x94
