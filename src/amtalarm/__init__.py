@@ -269,11 +269,13 @@ class AMTAlarm:
 
         await self.send_message(buf)
 
-    async def send_arm_partition(self, partition: int, code=self.default_password):
+    async def send_arm_partition(self, partition: int, code=None):
         """Send Request Information packet."""
 
         self.logger.info(f"arm partition {partition+1}")
 
+        if code is None:
+            code = self.default_password
         if code is None:
             raise ValueError
 
@@ -288,11 +290,13 @@ class AMTAlarm:
 
         await self.send_message(buf)
 
-    async def send_disarm_partition(self, partition: int, code=self.default_password):
+    async def send_disarm_partition(self, partition: int, code=None):
         """Send Request Information packet."""
 
         self.logger.info(f"disarm partition {partition+1}")
 
+        if code is None:
+            code = self.default_password
         if code is None:
             raise ValueError
 
