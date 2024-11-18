@@ -960,19 +960,7 @@ async def main():
     alarm = AMTAlarm(9009, 581000)
 
     await alarm.wait_connection_and_update()
-    print ("waited?")
-    #await alarm.send_request_zones()
-    print ("requested?")
-    await asyncio.sleep(1)
-
-    # await alarm.send_message(bytes([0xc2]))
-    # print ("c2")
-    # await alarm.send_message(bytes([0xc0]))
-    # print ("c0")
-
-    # await asyncio.sleep(5)
-
-    print ("unique id", await alarm.unique())
+    await asyncio.sleep(5)
     
 if __name__ == "__main__":
     asyncio.run(main())
