@@ -516,7 +516,8 @@ class AMTAlarm:
             if cmd == AMT_REQ_CODE_MODELO and len(packet) > 1:
                 # no ack because it is a response
                 print("cmd 0xc2: ", packet.hex(), file=sys.stderr)
-                self.model = str(packet[1:])
+                self.model = (packet[1:]).decode("utf-8")
+                self.model_initialized_event.set()
                 print("Model is ", self.model)
             elif cmd == AMT_COMMAND_CODE_HEARTBEAT and len(packet) == 1:
                 print("cmd 0xf7: ", packet.hex(), file=sys.stderr)
@@ -778,7 +779,7 @@ class AMTAlarm:
                 raise
 
     async def unique(self) -> str:
-        await self.model_initialized_event
+        await self.model_initialized_event.wait()
         return self.model + ' ' + self._mac_address.hex()
 
     async def wait_connection(self) -> bool:
@@ -971,7 +972,7 @@ async def main():
 
     # await asyncio.sleep(5)
 
-    print ("unique id", alarm.unique())
+    print ("unique id", await alarm.unique())
     
 if __name__ == "__main__":
     asyncio.run(main())
