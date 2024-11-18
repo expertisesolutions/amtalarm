@@ -253,7 +253,7 @@ class AMTAlarm:
 
     async def send_request_zones(self):
         """Send Request Information packet."""
-        print("request zones called")
+        self.logger.debug("request zones called")
 
         if self.default_password is None:
             raise ValueError
@@ -272,7 +272,7 @@ class AMTAlarm:
     async def send_arm_partition(self, partition: int):
         """Send Request Information packet."""
 
-        # print("arm partition", partition+1)
+        self.logger.info(f"arm partition {partition+1}")
 
         if self.default_password is None:
             raise ValueError
@@ -290,25 +290,24 @@ class AMTAlarm:
         buf = buf + b"\x21\x00"
         crc = self.crc(buf)
         buf = buf[0 : len(buf) - 1] + bytes([crc])
-        # print("arm partition req buf ", buf)
 
         try:
             self.writer.write(buf)
             await self.writer.drain()
         except OSError as e:
             self.polling_task = None
-            self.logger.error("Connection error %s", e)
+            self.logger.error(f"Connection error {str(e)}")
             await self.__accept_new_connection()
         except Exception as e:
             self.polling_task = None
-            self.logger.error("Some unknown error %s", e)
+            self.logger.error(f"Some unknown error {str(e)}")
             await self.__accept_new_connection()
             raise
 
     async def send_disarm_partition(self, partition: int):
         """Send Request Information packet."""
 
-        # print("arm partition", partition+1)
+        self.logger.info(f"disarm partition {partition+1}")
 
         if self.default_password is None:
             raise ValueError
@@ -326,18 +325,17 @@ class AMTAlarm:
         buf = buf + b"\x21\x00"
         crc = self.disarm_crc(buf)
         buf = buf[0 : len(buf) - 1] + bytes([crc])
-        # print("disarm partition req buf ", buf)
 
         try:
             self.writer.write(buf)
             await self.writer.drain()
         except OSError as e:
             self.polling_task = None
-            self.logger.error("Connection error %s", e)
+            self.logger.error(f"Connection error {str(e)}")
             await self.__accept_new_connection()
         except Exception as e:
             self.polling_task = None
-            self.logger.error("Some unknown error %s", e)
+            self.logger.error(f"Some unknown error {str(e)}")
             await self.__accept_new_connection()
             raise
 
@@ -375,27 +373,27 @@ class AMTAlarm:
             await self.writer.drain()
         except OSError as e:
             self.polling_task = None
-            self.logger.error("Connection error %s", e)
+            self.logger.error(f"Connection error {str(e)}")
             await self.__accept_new_connection()
         except Exception as e:
             self.polling_task = None
-            self.logger.error("Some unknown error %s", e)
+            self.logger.error(f"Some unknown error {str(e)}")
             await self.__accept_new_connection()
             raise
 
     async def send_raw_message(self, packet: bytes):
         """Send packet."""
         try:
-            print("sending ", packet.hex())
+            self.logger.debug("sending {packet.hex()}")
             self.writer.write(packet)
             await self.writer.drain()
         except OSError as e:
             self.polling_task = None
-            self.logger.error("Connection error %s", e)
+            self.logger.error(f"Connection error {str(e)}")
             await self.__accept_new_connection()
         except Exception as e:
             self.polling_task = None
-            self.logger.error("Some unknown error %s", e)
+            self.logger.error(f"Some unknown error {str(e)}")
             await self.__accept_new_connection()
             raise
 
@@ -404,7 +402,6 @@ class AMTAlarm:
 
         buf = bytes([len(packet)]) + packet
         crc = self.crc(buf + bytes([0]))
-        print("crc with ", buf.hex(), hex(crc))
         await self.send_raw_message(buf + bytes([crc]))
 
     def __handle_amt_event(self, event: int, partition: int, zone: int, client_id):
@@ -435,7 +432,7 @@ class AMTAlarm:
             AMT_EVENT_CODE_ATIVACAO_POR_UMA_TECLA,
             AMT_EVENT_CODE_ATIVACAO_PARCIAL,
         ):
-            # print("Activated partition (untriggering too)", partition, file=sys.stderr)
+            self.logger.info("Activated partition (untriggering too) {partition}")
             if partition != -1 and zone != -1 and zone < self.max_sensors:
                 self.triggered_sensors[zone] = False
             if partition == -1:
@@ -450,8 +447,8 @@ class AMTAlarm:
                 self.partitions[partition] = True
             # print("state after", self.partitions)
         if event == AMT_EVENT_CODE_FALHA_AO_COMUNICAR_EVENTO:
-            #self.logger.error("Alarm panel error: %s", AMT_EVENT_MESSAGES[event])
-            print("Alarm panel error AMT_EVENT_CODE_FALHA_AO_COMUNICAR_EVENTO")
+            self.logger.error("Alarm panel error: {AMT_EVENT_MESSAGES[event]}")
+            #print("Alarm panel error AMT_EVENT_CODE_FALHA_AO_COMUNICAR_EVENTO")
         if event in (
             AMT_EVENT_CODE_EMERGENCIA_MEDICA,
             AMT_EVENT_CODE_DISPARO_OU_PANICO_DE_INCENDIO,
@@ -470,7 +467,7 @@ class AMTAlarm:
             AMT_EVENT_CODE_CURTO_CIRCUITO_NA_FIACAO_DOS_SENSORES,
             AMT_EVENT_CODE_TAMPER_DO_SENSOR,
         ):
-            # print("Triggering partition ", partition, file=sys.stderr)
+            self.logger.info("Triggering partition {partition}")
             # self.logger.error(
             #     "Triggering partition %d with error: %s",
             #     partition,
@@ -502,7 +499,7 @@ class AMTAlarm:
             AMT_EVENT_CODE_RESTARAUCAO_TAMPER_DO_SENSOR,
             AMT_EVENT_CODE_RESTARAUCAO_BATERIA_BAIXA_DE_SENSOR_SEM_FIO,
         ):
-            # print("UN Triggering partition ", partition, file=sys.stderr)
+            self.logger.info("Untriggering partition {partition}")
             if partition != -1 and zone != -1 and zone < self.max_sensors:
                 self.triggered_sensors[zone] = False
             if partition == -1:
@@ -517,16 +514,12 @@ class AMTAlarm:
             cmd = packet[0]
             if cmd == AMT_REQ_CODE_MODELO and len(packet) > 1:
                 # no ack because it is a response
-                print("cmd 0xc2: ", packet.hex())
                 self.model = (packet[1:]).decode("utf-8")
                 self.model_initialized_event.set()
-                print("Model is ", self.model)
             elif cmd == AMT_COMMAND_CODE_HEARTBEAT and len(packet) == 1:
-                print("cmd 0xf7: ", packet.hex())
                 await self.__send_ack()
             # elif cmd == 0x94:
             elif cmd == AMT_COMMAND_CODE_CONECTAR:
-                print("cmd 0x94: ", packet.hex())
                 if len(self._mac_address) == 0:
                     self._mac_address = packet[4:7]
 
@@ -535,7 +528,6 @@ class AMTAlarm:
                 await self.send_request_model()
             # elif cmd == 0xC4:
             elif cmd == AMT_REQ_CODE_MAC and len(packet) == 7:
-                print("cmd 0xc4: ", packet.hex())
                 self._mac_address = packet[1:7]
             # elif cmd == 0xB0 and len(packet) == 17 and packet[1] == 0x12:
             elif (
@@ -543,7 +535,6 @@ class AMTAlarm:
                     and len(packet) == 17
                     and packet[1] == 0x12 or packet[0] == 0x11
             ):
-                print("cmd 0xb0: ", packet.hex())
                 # def unescape_zero(i):
                 #     return i if i != 0xA else 0
 
@@ -588,7 +579,7 @@ class AMTAlarm:
             ):
                 pass
             elif cmd == AMT_COMMAND_CODE_SOLICITA_DATA_HORA:
-                print("handling time command")
+                self.logger.info("handling time command")
                 timezone = packet[1] if len(packet) > 1 else 0
                 now = time.time()
                 (
@@ -624,24 +615,24 @@ class AMTAlarm:
                 else:
                     # print("cmd 0xe9: ", packet, file=sys.stderr)
                     if packet[1] == 0xE1:
-                        print("We are using wrong password in AMT integration?")
+                        self.logger.error("We are using wrong password in AMT integration?")
                     elif packet[1] == 0xE2:
                         pass
                     elif packet[2] == 0xE5:
-                        print("Some error")
+                        self.logger.error("Some error")
                     else:
-                        print("Some error")
+                        self.logger.error("Some error")
                     await self.__send_ack()
             elif (
                     cmd == AMT_PROTOCOL_ISEC_MOBILE
                     and len(packet) == 2
             ):
                 print("cmd 0xe9 error: ", packet.hex())
-                #self.logger.error("We are using wrong password in AMT integration?")
+                self.logger.error("We are using wrong password in AMT integration? {packet.hex()}")
                 await self.__send_ack()
                 # elif cmd == 0xE9 and len(packet) >= 3 * 8:
             elif cmd == AMT_PROTOCOL_ISEC_MOBILE and len(packet) >= 3 * 8:
-                print("e9 update all partitions and zones")
+                self.logger.debug("e9 update all partitions and zones")
                 for x in range(6):
                     for i in range(8):
                         c = packet[x + 1]
@@ -690,7 +681,7 @@ class AMTAlarm:
 
                 self.__call_listeners()
             else:
-                print("AMT doesn't know how to deal with %s ?", packet.hex())
+                self.logger.error("AMT doesn't know how to deal with {packet.hex()} ?")
 
     async def __handle_data(self):
         while len(self.outstanding_buffer) != 0:
@@ -746,18 +737,18 @@ class AMTAlarm:
                     and time.monotonic() - self._read_timestamp >= self._timeout
                 ):
                     self.polling_task = None
-                    print("Timeout error", (time.monotonic() - self._read_timestamp))
+                    self.logger.error("Timeout error {(time.monotonic() - self._read_timestamp))}")
                     await self.__accept_new_connection()
                     return
 
             except OSError as ex:
                 self.polling_task = None
-                print("Connection error %s", ex)
+                self.logger.error("Connection error {ex}")
                 await self.__accept_new_connection()
                 return
             except Exception as ex:
                 self.polling_task = None
-                print("Some unknown error %s", ex)
+                self.logger.error("Some unknown error {ex}")
                 await self.__accept_new_connection()
                 raise
 
@@ -769,7 +760,7 @@ class AMTAlarm:
             data = await self.reader.read(4096)
             if self.reader.at_eof():
                 self.reading_task = None
-                print("Connection dropped by other side")
+                self.logger.info("Connection dropped by other side")
                 await self.__accept_new_connection()
                 return
 
@@ -778,7 +769,7 @@ class AMTAlarm:
             try:
                 await self.__handle_data()
             except Exception as ex:
-                print("Some unknown error %s", ex)
+                self.logger.error("Some unknown error {ex}")
                 await self.__accept_new_connection()
                 raise
 
@@ -789,7 +780,7 @@ class AMTAlarm:
     async def wait_connection(self) -> bool:
         """Test if we can authenticate with the host."""
 
-        print(
+        self.logger.debug(
             "Not connected to Alarm Panel. Waiting connection from Alarm Panel"
         )
         # print("Logged error", file=sys.stderr)
@@ -822,9 +813,9 @@ class AMTAlarm:
                 (self.client_socket, _) = await asyncio.wait_for(
                     loop.sock_accept(self.socket), timeout=600
                 )
-                print("Connection accepted")
+                self.logger.debug("Connection accepted")
             except asyncio.TimeoutError:
-                print(
+                self.logger.error(
                     "Timeout waiting on connection from Alarm Panel (60s). Retrying"
                 )
                 continue
@@ -833,7 +824,7 @@ class AMTAlarm:
                     None, sock=self.client_socket
                 )
             except asyncio.TimeoutError:
-                print(
+                self.logger.error(
                     "Timeout opening connection from Alarm Panel (60s). Retrying"
                 )
                 continue
@@ -886,23 +877,17 @@ class AMTAlarm:
 
     async def async_update(self):
         """Asynchronously update hub state."""
-        print("async_update")
-
         if self.polling_task is None:
             self.polling_task = asyncio.create_task(self.__handle_polling())
         if self.reading_task is None:
             self.reading_task = asyncio.create_task(self.__handle_read_from_stream())
-
-        print("tasks created")
 
         await self.initialized_event.wait()
         await self.model_initialized_event.wait()
 
     async def wait_connection_and_update(self):
         """Call asynchronously wait_connection and then after a update."""
-        print("waiting connection")
         await self.wait_connection()
-        print("connected, i think")
         await self.async_update()
 
     async def __accept_new_connection(self):
@@ -942,7 +927,6 @@ class AMTAlarm:
 
     def __call_listeners(self):
         """Call all listeners."""
-        print ("__call_listeners: ", len(self._listeners))
         for i in self._listeners:
             i.alarm_update()
 
