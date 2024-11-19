@@ -299,6 +299,30 @@ AMT_EVENT_MESSAGES = {
 
 import crcengine
 
+
+def _bcd_to_decimal(mbytes: bytes, unescape_zeros=True):
+    """Convert a sequence of bcd encoded decimal to integer."""
+
+    def unescape_zero(i: int):
+        return i if i != 0xA else 0
+
+    if unescape_zeros:
+        mbytes = bytes(unescape_zero(b) for b in mbytes)
+
+    len_mbytes = len(mbytes)
+    return sum(10 ** (len_mbytes - i - 1) * b for i, b in enumerate(mbytes))
+
+
+def _decimal_to_bcd_nibble(decimal: int):
+    """Convert a decimal between 0 to 99 into two bcd encoded nibbles."""
+    if decimal < 0 or decimal > 99:
+        raise ValueError("argument must be non negative")
+
+    ones = decimal % 10
+    tens = decimal // 10
+
+    return tens << 4 | ones
+
 class AMTAlarm:
     """Class that represents the alarm panel"""
 
