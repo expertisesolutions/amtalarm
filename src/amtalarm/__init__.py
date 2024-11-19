@@ -575,7 +575,7 @@ class AMTAlarm:
             elif (
                     cmd == AMT_COMMAND_CODE_EVENT_CONTACT_ID # 0xb0
                     and len(packet) == 17
-                    and packet[1] == 0x12 or packet[0] == 0x11
+                    and (packet[1] == 0x11 or packet[1] == 0x12)
             ):
                 # def unescape_zero(i):
                 #     return i if i != 0xA else 0
@@ -617,7 +617,7 @@ class AMTAlarm:
             elif (
                     cmd == AMT_COMMAND_CODE_EVENT_DATA_HORA
                     and len(packet) == 29
-                    and packet[1] == 0x12
+                    and (packet[1] == 0x11 or packet[1] == 0x12)
             ):
                 pass
             elif cmd == AMT_COMMAND_CODE_SOLICITA_DATA_HORA:
