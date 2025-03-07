@@ -59,11 +59,23 @@ AMT_REQ_CODE_NIVEL_SINAL_GPRS3G4G = 0xD1
 AMT_REQ_CODE_PRESENCA_MODULO_GPRS3G4G = 0xD3
 
 AMT_PROTOCOL_ISEC_MOBILE = 0xE9
+AMT_PROTOCOL_ISECPROGRAM = 0xE7
 # Byte 1 - 0x21 (start of frame)
 # Byte 2 to 5 or 2 to 7 - password
 # Byte 6 or 8 - command
 # Byte 7 or 9 to ... - content
 # Byte ... + 1 - 0x21 (end of frame)
+
+AMT_ISEC_MOBILE_COMMAND_CODE_COMAND_ACCEPTED = 0xFE
+AMT_ISEC_MOBILE_COMMAND_CODE_INVALID_PASSWORD = 0xE1
+AMT_ISEC_MOBILE_COMMAND_CODE_INVALID_COMMAND = 0xE2
+AMT_ISEC_MOBILE_COMMAND_CODE_NOT_PARTITIONED = 0xE3
+AMT_ISEC_MOBILE_COMMAND_CODE_OPEN_ZONES = 0xE4
+AMT_ISEC_MOBILE_COMMAND_CODE_DEPRECATED_COMMAND = 0xE5
+AMT_ISEC_MOBILE_COMMAND_CODE_NO_PERMISSION_BY_PASS = 0xE6
+AMT_ISEC_MOBILE_COMMAND_CODE_NO_PERMISSION = 0xE7
+AMT_ISEC_MOBILE_COMMAND_CODE_ARMED = 0xE8
+AMT_ISEC_MOBILE_COMMAND_CODE_NO_ZONES = 0xEA
 
 
 AMT_EVENT_CODE_EMERGENCIA_MEDICA = 1100
@@ -299,7 +311,6 @@ AMT_EVENT_MESSAGES = {
 
 import crcengine
 
-
 def _bcd_to_decimal(mbytes: bytes, unescape_zeros=True):
     """Convert a sequence of bcd encoded decimal to integer."""
 
@@ -323,8 +334,30 @@ def _decimal_to_bcd_nibble(decimal: int):
 
     return tens << 4 | ones
 
+def _code_to_bcd(code: str):
+    """Convert a password code into a BCD array."""
+    result = bytes([])
+    
+    if len(code) % 2:
+        code = "0" + code
+
+    for i in range(len(code)//2):
+        ch = (ord(code[i*2]) - ord('0'))*10
+        cl = ord(code[i*2 + 1]) - ord('0')
+        result += bytes([_decimal_to_bcd_nibble(ch + cl)])
+
+    return result
+
 class AMTAlarm:
     """Class that represents the alarm panel"""
+
+    def checksum(self, value: bytes):
+        res = 0
+        for c in value:
+            res = res ^ c
+        res = res ^ 0xff
+        res = res & 0xff
+        return res
 
     def __init__(
             self, port : int, default_password=None, logger=logging.getLogger(__package__)
@@ -339,22 +372,22 @@ class AMTAlarm:
                 raise ValueError
 
         self.port = port
-        self._timeout = 10.0
+        self._timeout = 20.0
 
         self.polling_task = None
         self.reading_task = None
         self.model = None
         self.model_initialized_event = asyncio.Event()
+        self.isecprogram_authenticated_event = asyncio.Event()
         self.initialized_event = asyncio.Event()
 
         self.socket: Union[None, socket.socket] = None
         self.client_socket: Union[None, socket.socket] = None
         self.writer: asyncio.StreamWriter = None
         self.reader: asyncio.StreamReader = None
-        #self.is_initialized = False
-        self.crc = crcengine.create(0xAB, 8, 0, False, False, "", 0)
-        self.disarm_crc = crcengine.create(0xAB, 8, 0, False, False, "", 0xFF)
-        self.recv_crc = crcengine.create(0x01, 8, 0xFF, False, False, "", 0)
+
+        self.crc_isecprogram = crcengine.create(0x8005, 16, 0, False, False, "", 0)
+        self.isecprogram_authenticated = False
 
         self.open_sensors: list[Union[None, bool]] = [None] * self.max_sensors
         self.triggered_sensors: list[bool] = [False] * self.max_sensors
@@ -387,6 +420,57 @@ class AMTAlarm:
         buf = buf + bytes([cmd]) + b"\x21"
 
         await self.send_message(buf)
+
+
+    async def send_isecprogram_set_datetime(self, newtime = time.time()):
+        """Send Request Information packet."""
+        self.logger.debug("isecprogram authentication")
+
+        await self.send_isecprogram_authentication()
+        await self.isecprogram_authenticated_event.wait()
+        self.isecprogram_authenticated_event.clear()
+        if self.isecprogram_authenticated:
+            if self.default_password is None:
+                raise ValueError
+
+            buf = bytes([])
+            buf = buf + b"\x18"
+
+            await self.send_isecprogram_message(buf)
+            (
+                tm_year,
+                tm_mon,
+                tm_mday,
+                tm_hour,
+                tm_min,
+                tm_sec,
+                _,
+                _,
+                _,
+            ) = time.localtime(newtime)
+            tm_year -= 2000
+
+            buf = buf + bytes(map(_decimal_to_bcd_nibble,
+                                  [tm_year, tm_mon, tm_mday, tm_hour, tm_min, tm_sec]))
+            await self.send_isecprogram_message(buf)
+        else:
+            self.logger.warning("Failed authenticating in ISECPROGRAM protocol")
+
+    async def send_isecprogram_authentication(self):
+        """Send Request Information packet."""
+        self.logger.debug("isecprogram authentication")
+
+        if self.default_password is None:
+            raise ValueError
+
+        buf = bytes([])
+        buf = buf + b"\x11"
+
+        buf = buf + _code_to_bcd(self.default_password)
+
+        buf = buf + b"\x99"
+
+        await self.send_isecprogram_message(buf)
 
     async def send_arm_partition(self, partition: int, code=None):
         """Send Request Information packet."""
@@ -428,7 +512,7 @@ class AMTAlarm:
         buf = buf + bytes([0x40 + partition + 1])
         buf = buf + b"\x21"
 
-        await self.send_message(buf, crcengine=self.disarm_crc)
+        await self.send_message(buf, self.checksum)
 
     async def __send_ack(self):
         try:
@@ -464,24 +548,37 @@ class AMTAlarm:
         """Send packet."""
 
         if crcengine is None:
-            crcengine = self.crc
+            crcengine = self.checksum
 
         buf = bytes([len(packet)]) + packet
         crc = crcengine(buf + bytes([0]))
         await self.send_raw_message(buf + bytes([crc]))
 
-    def __handle_amt_event(self, event: int, partition: int, zone: int, client_id):
+    async def send_isecprogram_message(self, packet: bytes, crcengine=None):
+        """Send packet."""
+
+        if crcengine == None:
+            crcengine = self.checksum
+
+        crc = self.crc_isecprogram(bytes([len(packet)]) + packet)
+
+        print(f"=================================== crc is {crc}")
+
+        buf = b"\xe7" + bytes([len(packet)]) + packet + bytes([crc >> 8, crc & 0xFF])
+
+        print (f"buf is {buf.hex()}")
+            
+        buf = bytes([len(buf)]) + buf
+        v1_crc = crcengine(buf + bytes([0]))
+        print (f"whole packet {(buf + bytes([v1_crc])).hex()}")
+        await self.send_raw_message(buf + bytes([v1_crc]))
+
+    def __handle_amt_event(self, event: int, partition: int, zone: int, client_id: int):
         if event in (
             AMT_EVENT_CODE_DESATIVACAO_PELO_USUARIO,
             AMT_EVENT_CODE_AUTO_DESATIVACAO,
             AMT_EVENT_CODE_DESATIVACAO_VIA_COMPUTADOR_OU_TELEFONE,
         ):
-            # print(
-            #     "deactivated, will untrigger too if there is any trigger partition",
-            #     partition,
-            #     file=sys.stderr,
-            # )
-            # print("state before", self.partitions)
             if partition == -1:
                 self.partitions = [False] * self.max_partitions
                 self.triggered_partitions = [False] * self.max_partitions
@@ -490,7 +587,6 @@ class AMTAlarm:
                 self.partitions[partition] = False
                 self.triggered_partitions = [False] * self.max_partitions
                 self.triggered_sensors = [False] * self.max_sensors
-            # print("state after", self.partitions)
         elif event in (
             AMT_EVENT_CODE_ATIVACAO_PELO_USUARIO,
             AMT_EVENT_CODE_AUTO_ATIVACAO,
@@ -506,15 +602,12 @@ class AMTAlarm:
             else:
                 self.triggered_partitions[partition] = False
 
-            # print("state before", self.partitions)
             if partition == -1:
                 self.partitions = [True] * self.max_partitions
             else:
                 self.partitions[partition] = True
-            # print("state after", self.partitions)
         if event == AMT_EVENT_CODE_FALHA_AO_COMUNICAR_EVENTO:
             self.logger.error(f"Alarm panel error: {AMT_EVENT_MESSAGES[event]}")
-            #print("Alarm panel error AMT_EVENT_CODE_FALHA_AO_COMUNICAR_EVENTO")
         if event in (
             AMT_EVENT_CODE_EMERGENCIA_MEDICA,
             AMT_EVENT_CODE_DISPARO_OU_PANICO_DE_INCENDIO,
@@ -582,70 +675,51 @@ class AMTAlarm:
                 # no ack because it is a response
                 self.model = (packet[1:]).decode("utf-8")
                 self.model_initialized_event.set()
+                self.logger.debug(f"Model is {self.model}")
             elif cmd == AMT_COMMAND_CODE_HEARTBEAT and len(packet) == 1:
                 await self.__send_ack()
             # elif cmd == 0x94:
             elif cmd == AMT_COMMAND_CODE_CONECTAR:
                 if len(self._mac_address) == 0:
                     self._mac_address = packet[4:7]
+                self.logger.debug(f"MAC is {self._mac_address}")
 
                 self.initialized_event.set()
                 await self.__send_ack()
                 await self.send_request_model()
-            # elif cmd == 0xC4:
             elif cmd == AMT_REQ_CODE_MAC and len(packet) == 7:
                 self._mac_address = packet[1:7]
             # elif cmd == 0xB0 and len(packet) == 17 and packet[1] == 0x12:
             elif (
                     cmd == AMT_COMMAND_CODE_EVENT_CONTACT_ID # 0xb0
-                    and len(packet) == 17
-                    and (packet[1] == 0x11 or packet[1] == 0x12)
             ):
-                # def unescape_zero(i):
-                #     return i if i != 0xA else 0
+                if len(packet) == 17 and (packet[1] == 0x11 or packet[1] == 0x12):
+                    client_id = _bcd_to_decimal(packet[2:6])
+                    ev_id = _bcd_to_decimal(packet[8:12])
+                    partition = _bcd_to_decimal(packet[12:14]) - 1
+                    zone = _bcd_to_decimal(packet[14:17])
 
-                # client_id = (
-                #     unescape_zero(packet[2]) * 1000
-                #     + unescape_zero(packet[3]) * 100
-                #     + unescape_zero(packet[4]) * 10
-                #     + unescape_zero(packet[5])
-                # )
-                client_id = _bcd_to_decimal(packet[2:6])
-                # ev_id = (
-                #     unescape_zero(packet[8]) * 1000
-                #     + unescape_zero(packet[9]) * 100
-                #     + unescape_zero(packet[10]) * 10
-                #     + unescape_zero(packet[11])
-                # )
-                ev_id = _bcd_to_decimal(packet[8:12])
-                # partition = unescape_zero(packet[12]) * 10 + unescape_zero(packet[13]) - 1
-                partition = _bcd_to_decimal(packet[12:14]) - 1
-                # zone = (
-                #     unescape_zero(packet[14]) * 100
-                #     + unescape_zero(packet[15]) * 10
-                #     + unescape_zero(packet[16])
-                # )
-                zone = _bcd_to_decimal(packet[14:17])
+                    self.__handle_amt_event(ev_id, partition, zone, client_id)
 
-                print(
-                    "event",
-                    ev_id,
-                    "from partition",
-                    partition,
-                    "and zone",
-                    zone,
-                )
-                self.__handle_amt_event(ev_id, partition, zone, client_id)
-
-                await self.__send_ack()
+                    await self.__send_ack()
+                else:
+                    logger.warning("AMT_COMMAND_CODE_EVENT_CONTACT_ID received, but couldn't parse with size ", len(packet))
             elif (
                     cmd == AMT_COMMAND_CODE_EVENT_DATA_HORA
-                    and len(packet) == 29
-                    and (packet[1] == 0x11 or packet[1] == 0x12)
             ):
-                pass
+                if len(packet) == 29 and (packet[1] == 0x11 or packet[1] == 0x12):
+                    client_id = _bcd_to_decimal(packet[2:6])
+                    ev_id = _bcd_to_decimal(packet[8:12])
+                    partition = _bcd_to_decimal(packet[12:14]) - 1
+                    zone = _bcd_to_decimal(packet[14:17])
+                    data_evento = datetime.datetime(packet[19], packet[18], packet[17],
+                                                    packet[20], packet[21], packet[22])
+                    self.logger.info("event with time and date", ev_id, "from partition", partition, "and zone", zone,
+                                     "datetime", data_event)
+                else:
+                    logger.warning("AMT_COMMAND_CODE_EVENT_DATA_HORA received, but couldn't parse with size ", len(packet))
             elif cmd == AMT_COMMAND_CODE_SOLICITA_DATA_HORA:
-                self.logger.info("handling time command")
+                self.logger.info("sending datetime response to alarm panel")
                 timezone = packet[1] if len(packet) > 1 else 0
                 now = time.time()
                 (
@@ -675,53 +749,64 @@ class AMTAlarm:
             #     and len(packet) == 2
             #     and (packet[1] == 0xE5 or packet[1] == 0xFE)
             # ):
+            elif cmd == AMT_PROTOCOL_ISECPROGRAM and len(packet) >= 4:
+                if packet[1] == 1 and packet[2] == 0x50:
+                    self.isecprogram_authenticated = True
+                    self.isecprogram_authenticated_event.set()
+                elif packet[1] == 1 and packet[2] == 0x53:
+                    self.logger.error("Authentication failed")
+                    self.isecprogram_authenticated_event.set()
             elif cmd == AMT_PROTOCOL_ISEC_MOBILE and len(packet) == 2:
-                if packet[1] == 0xFE:
+                if packet[1] == AMT_ISEC_MOBILE_COMMAND_CODE_COMAND_ACCEPTED:
                     await self.__send_ack()
                 else:
-                    # print("cmd 0xe9: ", packet, file=sys.stderr)
-                    if packet[1] == 0xE1:
+                    if packet[1] == AMT_ISEC_MOBILE_COMMAND_CODE_INVALID_PASSWORD:
                         self.logger.error("We are using wrong password in AMT integration?")
-                    elif packet[1] == 0xE2:
-                        pass
-                    elif packet[2] == 0xE5:
-                        self.logger.error("Some error")
+                    elif packet[1] == AMT_ISEC_MOBILE_COMMAND_CODE_INVALID_COMMAND:
+                        self.logger.error("Invalid Command")
+                    elif packet[1] == AMT_ISEC_MOBILE_COMMAND_CODE_NOT_PARTITIONED:
+                        self.logger.error("Not partitioned")
+                    elif packet[1] == AMT_ISEC_MOBILE_COMMAND_CODE_OPEN_ZONES:
+                        self.logger.error("Open Zones")
+                    elif packet[1] == AMT_ISEC_MOBILE_COMMAND_CODE_DEPRECATED_COMMAND:
+                        self.logger.error("Deprecated command")
+                    elif packet[1] == AMT_ISEC_MOBILE_COMMAND_CODE_NO_PERMISSION_BY_PASS:
+                        self.logger.error("No permission to by pass")
+                    elif packet[1] == AMT_ISEC_MOBILE_COMMAND_CODE_NO_PERMISSION:
+                        self.logger.error("No permission for this command")
+                    elif packet[1] == AMT_ISEC_MOBILE_COMMAND_CODE_ARMED:
+                        self.logger.error("Already armed")
+                    elif packet[1] == AMT_ISEC_MOBILE_COMMAND_CODE_NO_ZONES:
+                        self.logger.error("No zones configured")
                     else:
-                        self.logger.error("Some error")
+                        self.logger.error("Some unknown error")
                     await self.__send_ack()
-            elif (
-                    cmd == AMT_PROTOCOL_ISEC_MOBILE
-                    and len(packet) == 2
-            ):
-                print("cmd 0xe9 error: ", packet.hex())
-                self.logger.error(f"We are using wrong password in AMT integration? {packet.hex()}")
-                await self.__send_ack()
-                # elif cmd == 0xE9 and len(packet) >= 3 * 8:
-            elif cmd == AMT_PROTOCOL_ISEC_MOBILE and len(packet) >= 3 * 8:
-                self.logger.debug("e9 update all partitions and zones")
+            elif cmd == AMT_PROTOCOL_ISEC_MOBILE and len(packet) >= 54+1:
+                self.logger.debug(f"e9 update all partitions and zones, size {len(packet)}")
+                self.logger.debug(packet.hex())
                 for x in range(6):
-                    for i in range(8):
+                    for i in range(8): # starts in byte 1 and go up to byte 8
                         c = packet[x + 1]
                         self.open_sensors[x * 8 + i] = ((c >> i) & 1) == 1
 
-                    for i in range(8):
+                    for i in range(8): # starts in byte 9 and go up to byte 16
                         c = packet[x + 1 + 8]
                         self.triggered_sensors[x * 8 + i] = ((c >> i) & 1) == 1
 
-                    for i in range(8):
+                    for i in range(8): # starts in byte 17 and go up to byte 24
                         c = packet[x + 1 + 16]
                         self.bypassed_sensors[x * 8 + i] = ((c >> i) & 1) == 1
 
-                    c = packet[1 + 8 + 8 + 8 + 3]
-                    for i in range(2):
-                        self.partitions[i] = bool((c >> i) & 1)
+                c = packet[28]
+                for i in range(2):
+                    self.partitions[i] = bool((c >> i) & 1)
 
-                    c = packet[1 + 8 + 8 + 8 + 3 + 1]
-                    for i in range(2):
-                        self.partitions[i + 2] = bool((c >> i) & 1)
-
+                c = packet[29]
+                for i in range(2):
+                    self.partitions[i + 2] = bool((c >> i) & 1)
 
                 c = packet[30]
+                self.logger.debug(f"byte returned {c}")
                 self.siren_activated = bool((c >> 1) & 1)
                 self.zones_triggered = bool((c >> 2) & 1)
                 self.panel_activated = bool((c >> 3) & 1)
@@ -734,8 +819,10 @@ class AMTAlarm:
                 self.battery_low = bool((c >> 1) & 1)
                 self.power_out = bool((c >> 0) & 1)
 
-                #print("siren", self.siren_activated, "zone triggered", self.zones_triggered, "panel activated", self.panel_activated, "problem_detected", self.problem_detected)
-                #print("overload aux", self.overload_aux, "battery_short_circuit", self.battery_short_circuit, "battery_not_found", self.battery_not_found, "battery_low", self.battery_low, "power_out", self.power_out)
+                if self.siren_activated or self.zones_triggered or self.panel_activated or self.problem_detected:
+                    self.logger.warning(f"siren {self.siren_activated} zone triggered {self.zones_triggered} panel activated {self.panel_activated} problem_detected {self.problem_detected}")
+                if self.overload_aux or self.battery_short_circuit or self.battery_not_found or self.battery_low or self.power_out:
+                    self.logger.warning(f"overload aux {self.overload_aux} battery_short_circuit {self.battery_short_circuit} battery_not_found {self.battery_not_found} battery_low {self.battery_low} power_out {self.power_out}")
 
                 c = packet[43]
                 self.error_communicating_event = bool((c >> 3) & 1)
@@ -743,7 +830,8 @@ class AMTAlarm:
                 self.error_siren_short_circuit = bool((c >> 1) & 1)
                 self.error_siren_cut = bool((c >> 0) & 1)
 
-                #print("(error) communication event", self.error_communicating_event, "telephone line", self.error_telephone_line, "siren_short_circuit", self.error_siren_short_circuit, "siren cut", self.error_siren_cut)
+                if self.error_communicating_event or self.error_telephone_line or self.error_siren_short_circuit or self.error_siren_cut:
+                    self.logger.warning(f"(error) communication event {self.error_communicating_event} telephone line {self.error_telephone_line} siren_short_circuit {self.error_siren_short_circuit} siren cut {self.error_siren_cut}")
 
                 self.__call_listeners()
             else:
@@ -770,11 +858,11 @@ class AMTAlarm:
 
             assert len(buf) == packet_start + packet_size + crc
             if crc:
-                if self.recv_crc(buf) != 0:
+                if self.checksum(buf) != 0:
                     print(
                         "Buffer %s doesn't match CRC, which should be %d but actually was %d",
                         buf,
-                        self.recv_crc(buf),
+                        self.checksum(buf),
                         buf[-1],
                     )
                     # Drop one byte and try synchronization again
@@ -792,7 +880,6 @@ class AMTAlarm:
         if self.default_password is None:
             return
 
-        print("there is a default_password")
         while True:
             try:
                 await self.send_request_zones()
