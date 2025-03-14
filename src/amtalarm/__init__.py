@@ -473,7 +473,7 @@ class AMTAlarm:
         await self.send_isecprogram_message(buf)
 
     async def send_arm_partition(self, partition: int, code=None):
-        """Send Request Information packet."""
+        """Send Arm Partition packet."""
 
         self.logger.info(f"arm partition {partition+1}")
 
@@ -489,6 +489,26 @@ class AMTAlarm:
 
         buf = buf + b"\x41"
         buf = buf + bytes([0x40 + partition + 1])
+        buf = buf + b"\x21"
+
+        await self.send_message(buf)
+
+    async def send_arm(self, code=None):
+        """Send Arm packet."""
+
+        self.logger.info(f"arm")
+
+        if code is None:
+            code = self.default_password
+        if code is None:
+            raise ValueError
+
+        buf = bytes([])
+        buf = buf + b"\xe9\x21"
+
+        buf = buf + code.encode("utf-8")
+
+        buf = buf + b"\x41"
         buf = buf + b"\x21"
 
         await self.send_message(buf)
@@ -510,6 +530,26 @@ class AMTAlarm:
 
         buf = buf + b"\x44"
         buf = buf + bytes([0x40 + partition + 1])
+        buf = buf + b"\x21"
+
+        await self.send_message(buf, self.checksum)
+
+    async def send_disarm(self, code=None):
+        """Send Disarm packet."""
+
+        self.logger.info(f"disarm")
+
+        if code is None:
+            code = self.default_password
+        if code is None:
+            raise ValueError
+
+        buf = bytes([])
+        buf = buf + b"\xe9\x21"
+
+        buf = buf + code.encode("utf-8")
+
+        buf = buf + b"\x44"
         buf = buf + b"\x21"
 
         await self.send_message(buf, self.checksum)
