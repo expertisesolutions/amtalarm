@@ -554,6 +554,67 @@ class AMTAlarm:
 
         await self.send_message(buf, self.checksum)
 
+    async def _send_trigger(self, code=None, panico_type=1):
+        if code is None:
+            code = self.default_password
+        if code is None:
+            raise ValueError
+
+        buf = bytes([])
+        buf = buf + b"\xe9\x21"
+
+        buf = buf + code.encode("utf-8")
+
+        cmd = 0x45
+
+        buf = buf + bytes([cmd, panico_type]) + b"\x21"
+
+        await self.send_message(buf)
+
+    async def send_audible_trigger(self, code=None):
+        """Send request packet to Trigger the alarm."""
+        self.logger.debug("send trigger called")
+        await self._send_trigger(code)
+
+    async def send_silent_trigger(self, code=None):
+        """Send request packet to Trigger the alarm."""
+        self.logger.debug("send trigger called")
+        silent_panico_type = 0
+        await self._send_trigger(code, silent_panico_type)
+
+    async def send_medical_trigger(self, code=None):
+        """Send request packet to Trigger the alarm."""
+        medical_panico_type = 0
+        await self._send_trigger(code, medical_panico_type)
+
+    async def send_fire_trigger(self, code=None):
+        """Send request packet to Trigger the alarm."""
+        fire_panico_type = 0
+        await self._send_trigger(code, fire_panico_type)
+
+    async def send_bypass(self, zones: list[int], code=None):
+        """Send bypass packet alarm."""
+        self.logger.debug("send bypass")
+
+        if code is None:
+            code = self.default_password
+        if code is None:
+            raise ValueError
+
+        state = bytearray(b'\x00\x00\x00\x00\x00\x00\x00\x00')
+
+        for i in range(8):
+            for j in range(8):
+                if (i*8 + j) in zones:
+                    state[i] |= 1 << j
+
+        buf = bytes([])
+        buf = buf + b"\xe9\x21"
+        buf = buf + code.encode("utf-8") + bytes([0x42])
+        buf = buf + state + b"\x21"
+
+        await self.send_message(buf)
+
     async def __send_ack(self):
         try:
             self.writer.write(bytes([0xFE]))
@@ -586,6 +647,7 @@ class AMTAlarm:
 
     async def send_message(self, packet: bytes, crcengine=None):
         """Send packet."""
+        self.logger.debug(f"Sending message with contents {packet.hex()}")
 
         if crcengine is None:
             crcengine = self.checksum
