@@ -100,6 +100,12 @@ class AMTAlarm:
         self._polling_task: asyncio.Task | None = None
         self._problem_polling_task: asyncio.Task | None = None
 
+        # Reconnection supervisor
+        self._closing = False
+        self._connecting = False
+        self._reconnect_task: asyncio.Task | None = None
+        self._connection.on_connection_change(self._handle_connection_state)
+
     # --- Properties (read-only state) ---
 
     @property
@@ -180,6 +186,8 @@ class AMTAlarm:
 
     async def stop(self) -> None:
         """Shutdown cleanly."""
+        self._closing = True
+        self._cancel_reconnect()
         if self._problem_polling_task is not None:
             self._problem_polling_task.cancel()
             self._problem_polling_task = None
@@ -192,19 +200,51 @@ class AMTAlarm:
         return True
 
     async def wait_connection_and_update(self) -> None:
-        await self.wait_connection()
-        await self.async_update()
+        self._closing = False
+        await self._connect_and_update()
 
     def close(self) -> None:
+        self._closing = True
+        self._cancel_reconnect()
         self._connection.close()
+
+    def _cancel_reconnect(self) -> None:
+        if self._reconnect_task is not None:
+            self._reconnect_task.cancel()
+            self._reconnect_task = None
+
+    async def _connect_and_update(self) -> None:
+        if self._connecting:
+            return
+        self._connecting = True
+        try:
+            while not self._closing:
+                try:
+                    await self.wait_connection()
+                    await self.async_update()
+                    return
+                except asyncio.CancelledError:
+                    raise
+                except Exception as ex:
+                    self._logger.error("Connect/update failed, retrying in 2s: %s", ex)
+                    await asyncio.sleep(2)
+        finally:
+            self._connecting = False
+
+    def _handle_connection_state(self, state) -> None:
+        if (state == ConnectionState.DISCONNECTED
+                and not self._closing
+                and not self._connecting
+                and (self._reconnect_task is None or self._reconnect_task.done())):
+            self._logger.warning("Panel connection lost, scheduling automatic reconnect")
+            self._reconnect_task = asyncio.create_task(self._connect_and_update())
 
     async def async_update(self) -> None:
         """Start polling and reading tasks."""
         self._connection.start_tasks(self._polling_loop)
-        await self._initialized.wait()
-        await self._model_initialized.wait()
+        await asyncio.wait_for(self._initialized.wait(), timeout=30)
+        await asyncio.wait_for(self._model_initialized.wait(), timeout=30)
 
-        # Start ISECProgram queries after model is known
         if self.default_password is not None:
             asyncio.create_task(self._initial_isecprogram_query())
 
@@ -430,19 +470,16 @@ class AMTAlarm:
                 if self._connection.check_timeout():
                     self._logger.error("Read timeout exceeded")
                     await self._connection._accept_new_connection()
-                    asyncio.create_task(self.wait_connection_and_update())
                     return
             except OSError as ex:
                 self._logger.error("Connection error in polling: %s", ex)
                 await self._connection._accept_new_connection()
-                asyncio.create_task(self.wait_connection_and_update())
                 return
             except asyncio.CancelledError:
                 return
             except Exception as ex:
                 self._logger.error("Unknown error in polling: %s", ex)
                 await self._connection._accept_new_connection()
-                asyncio.create_task(self.wait_connection_and_update())
                 raise
 
     # --- Packet handler ---
