@@ -327,6 +327,22 @@ def parse_general_status_smart(payload: bytes) -> GeneralStatus:
     return gs
 
 
+def parse_general_status_legacy(payload: bytes) -> GeneralStatus:
+    """Parse ISECProgram 0x17 response (non-Smart models).
+
+    Layout (payload[0]=command 0x97, payload[1]=model): source voltage at
+    payload[21-22] and battery voltage at payload[23-24], both big-endian and
+    divided by 61 per the Intelbras SDK.
+    """
+    gs = GeneralStatus()
+    if len(payload) < 25:
+        return gs
+    gs.model_code = payload[1]
+    gs.source_voltage = ((payload[21] << 8) | payload[22]) / 61.0
+    gs.battery_voltage = ((payload[23] << 8) | payload[24]) / 61.0
+    return gs
+
+
 def parse_problem_status_smart(payload: bytes) -> ProblemStatus:
     """Parse ISECProgram 0x34 response (Smart models, 23 bytes)."""
     ps = ProblemStatus()

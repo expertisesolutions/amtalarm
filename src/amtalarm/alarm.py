@@ -54,6 +54,7 @@ from .protocol import (
     parse_status_packet,
     parse_isecprogram_response,
     parse_general_status_smart,
+    parse_general_status_legacy,
     parse_problem_status_smart,
     xor_checksum,
 )
@@ -68,6 +69,8 @@ class AMTAlarm:
         self,
         port: int,
         default_password=None,
+        system_password=None,
+        isecprogram_poll_interval: int = 1800,
         logger: logging.Logger | None = None,
     ):
         self._logger = logger or logging.getLogger(__name__)
@@ -77,6 +80,13 @@ class AMTAlarm:
             if len(self.default_password) not in (4, 6):
                 raise ValueError("Password must be 4 or 6 digits")
 
+        self.system_password: str | None = None
+        if system_password is not None:
+            self.system_password = str(system_password)
+            if len(self.system_password) not in (4, 6):
+                raise ValueError("System password must be 4 or 6 digits")
+
+        self._isecprogram_poll_interval = isecprogram_poll_interval
         self._port = port
         self._state = PanelState(self._logger)
         self._connection = AMTConnection(port, self._handle_packet, self._logger)
@@ -369,7 +379,8 @@ class AMTAlarm:
 
     async def _isecprogram_session(self, command_builder, response_parser=None):
         """Run an ISECProgram command within an auth session (locks keyboard)."""
-        if self.default_password is None:
+        isecprogram_password = self.system_password or self.default_password
+        if isecprogram_password is None:
             return None
 
         async with self._isecprogram_lock:
@@ -378,7 +389,7 @@ class AMTAlarm:
                 self._isecprogram_response.clear()
                 self._isecprogram_authenticated = False
                 await self._connection.send_raw(
-                    encode_isecprogram_frame(build_isecprogram_auth(self.default_password))
+                    encode_isecprogram_frame(build_isecprogram_auth(isecprogram_password))
                 )
                 try:
                     await asyncio.wait_for(self._isecprogram_response.wait(), timeout=5.0)
@@ -416,7 +427,7 @@ class AMTAlarm:
         """Request general status via ISECProgram."""
         is_smart = self._state.device_info.model_code in SMART_MODEL_CODES
         builder = build_isecprogram_general_status_smart if is_smart else build_isecprogram_general_status_legacy
-        parser = parse_general_status_smart  # TODO: add legacy parser
+        parser = parse_general_status_smart if is_smart else parse_general_status_legacy
         result = await self._isecprogram_session(builder, parser)
         if result and isinstance(result, GeneralStatus):
             self._state.apply_general_status(result)
@@ -437,25 +448,30 @@ class AMTAlarm:
         return None
 
     async def _initial_isecprogram_query(self) -> None:
-        """Run initial ISECProgram queries after connection."""
+        """Run initial ISECProgram queries after connection, then poll periodically."""
+        await self._poll_isecprogram_once()
+        self._problem_polling_task = asyncio.create_task(self._isecprogram_polling_loop())
+
+    async def _poll_isecprogram_once(self) -> None:
         try:
             await self.request_general_status()
         except Exception:
-            self._logger.exception("Initial general status query failed")
+            self._logger.exception("General status query failed")
+        try:
+            await self.request_problem_status()
+        except Exception:
+            self._logger.exception("Problem status query failed")
 
-        # Start periodic problem status polling
-        self._problem_polling_task = asyncio.create_task(self._problem_polling_loop())
-
-    async def _problem_polling_loop(self) -> None:
-        """Poll problem status every 60 seconds."""
+    async def _isecprogram_polling_loop(self) -> None:
+        """Poll general + problem status at the configured interval (default 30 min)."""
         while True:
-            await asyncio.sleep(60)
+            await asyncio.sleep(self._isecprogram_poll_interval)
             try:
-                await self.request_problem_status()
+                await self._poll_isecprogram_once()
             except asyncio.CancelledError:
                 return
             except Exception:
-                self._logger.exception("Problem status poll failed")
+                self._logger.exception("ISECProgram poll failed")
 
     # --- Polling ---
 
